@@ -52,10 +52,10 @@ The `download_list.md` file should be organized as follows:
 
 ### 1. Prerequisites
 
-Ensure `yt-dlp` is installed:
+Ensure `yt-dlp` is installed as a script using Homebrew:
 
 ```bash
-pip install yt-dlp
+brew install yt-dlp
 ```
 
 ### 2. Give Execution Permissions
@@ -64,13 +64,21 @@ pip install yt-dlp
 chmod +x download_videos.sh
 ```
 
-### 3. Update the `download_list.md` file from the template `download_list_TEMPLATE.md` and add the videos you want to download to the categories you want.
+### 3. Add videos to download
+
+Update the `download_list.md` file and add the videos you want to download to the categories you want.
 
 ### 4. Run the Download Agent
 
 ```bash
 ./download_videos.sh
 ```
+
+### 5. Enjoy!
+
+The script will run in the background and download the videos to the `VIDEOS` folder.
+
+You can check the progress in the terminal and the `download_list.md` file will be updated automatically after each download. When the script is finished, it will move the `download_list.md` file to the `downloaded/` folder and archive it with a timestamp. It will also create a new `download_list.md` from the template `download_list_TEMPLATE.md`.
 
 ## 🔧 How It Works
 

@@ -13,10 +13,26 @@ load_env() {
         export $(cat .env | grep -v '^#' | xargs)
         echo "✅ Configuration loaded successfully"
     else
-        echo "⚠️  .env file not found, using default values"
-        export WORKING_DIRECTORY="/Users/oliver/Downloads"
-        export MAX_CONCURRENT_DOWNLOADS=2
-        export DOWNLOAD_QUALITY="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+        echo ""
+        echo "❌ ERROR: .env file not found!"
+        echo ""
+        echo "📋 To use this script, you need to:"
+        echo "   1. Copy the template: cp .env.example .env"
+        echo "   2. Edit .env and configure your settings:"
+        echo "      - WORKING_DIRECTORY: Set your downloads directory"
+        echo "      - PROJECT_FOLDER: Set your project folder name"
+        echo "      - MAX_CONCURRENT_DOWNLOADS: Set concurrent download limit"
+        echo "      - DOWNLOAD_QUALITY: Set video quality preference"
+        echo ""
+        echo "🔧 Example configuration:"
+        echo "   WORKING_DIRECTORY=\"/Users/username/Downloads\""
+        echo "   PROJECT_FOLDER=\"my-video-downloads\""
+        echo "   MAX_CONCURRENT_DOWNLOADS=2"
+        echo "   DOWNLOAD_QUALITY=\"bestvideo[height<=1080]+bestaudio/best[height<=1080]\""
+        echo ""
+        echo "⚠️  Please create and configure your .env file before running this script."
+        echo ""
+        exit 1
     fi
 }
 
@@ -91,11 +107,11 @@ echo "🔧 Setting up working directory and category folders..."
 # Navigate to WORKING directory from .env file
 cd "$WORKING_DIRECTORY"
 
-# Create main yt-dlp-agent folder if it doesn't exist
-mkdir -p yt-dlp-agent
+# Create main project folder if it doesn't exist
+mkdir -p "$PROJECT_FOLDER"
 
-# Navigate to the yt-dlp-agent directory
-cd yt-dlp-agent
+# Navigate to the project directory
+cd "$PROJECT_FOLDER"
 
 # Create VIDEOS folder if it doesn't exist
 mkdir -p VIDEOS
