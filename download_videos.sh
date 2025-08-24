@@ -317,6 +317,14 @@ process_downloads() {
         # Move the file
         mv download_list.md "$new_filename"
         echo "📄 Moved download list to: $new_filename"
+        
+        # Create new download_list.md from template for next session
+        if [ -f "download_list_TEMPLATE.md" ]; then
+            cp download_list_TEMPLATE.md download_list.md
+            echo "📋 Created new download_list.md from template for next session"
+        else
+            echo "⚠️  Warning: download_list_TEMPLATE.md not found, cannot create new download list"
+        fi
     fi
 }
 
