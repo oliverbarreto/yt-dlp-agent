@@ -1,0 +1,24 @@
+# Environment variables
+.env
+
+# Downloaded videos, history list, docs
+VIDEOS/
+downloaded/
+project-docs/
+scripts/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
