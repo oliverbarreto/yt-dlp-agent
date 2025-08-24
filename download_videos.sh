@@ -215,6 +215,22 @@ update_progress() {
     show_progress "$completed" "$total"
 }
 
+# Function to update the download_list.md file with completion status
+update_download_list_status() {
+    echo "📝 Updating download_list.md with completion status..."
+    
+    # Get current date and time
+    local current_datetime=$(date +"%B %d, %Y %H:%M")
+    
+    # Update the date line (line 3)
+    sed -i '' "3s/.*/**Created:** $current_datetime/" download_list.md
+    
+    # Update the status line (line 4)
+    sed -i '' "4s/.*/**Status:** Finalized - All downloads completed/" download_list.md
+    
+    echo "✅ Download list status updated successfully!"
+}
+
 # Function to process downloads with concurrency control
 process_downloads() {
     local max_concurrent="$MAX_CONCURRENT_DOWNLOADS"
@@ -285,6 +301,9 @@ process_downloads() {
     echo "   - Pending: $(count_videos "pending")"
     echo ""
     echo "📁 All videos saved in VIDEOS/ folder structure"
+    
+    # Update download_list.md with completion status before moving
+    update_download_list_status
     
     # Move download_list.md to downloaded folder with timestamp
     if [ -f "download_list.md" ]; then
