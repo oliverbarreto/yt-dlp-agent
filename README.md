@@ -16,6 +16,8 @@ A powerful, autonomous YouTube video downloader with intelligent organization, p
 
 ## 📁 Directory Structure
 
+The script will create the following directory structure using the `WORKING_DIRECTORY` & `PROJECT_FOLDER` variables specified in the `.env` file. Example: `yt-dlp-agent → /Users/oliver/Downloads/yt-dlp-agent/VIDEOS/`
+
 ```
 /Users/oliver/Downloads/yt-dlp-agent/
 ├── VIDEOS/
@@ -64,11 +66,31 @@ brew install yt-dlp
 chmod +x download_videos.sh
 ```
 
-### 3. Add videos to download
+### 3. Configure the `.env` file
 
-Update the `download_list.md` file and add the videos you want to download to the categories you want.
+Configure the `.env` file with your preferred settings.
 
-### 4. Run the Download Agent
+```bash
+cp .env.example .env
+```
+
+Set the `WORKING_DIRECTORY` & `PROJECT_FOLDER` variables in the `.env` file. Then set the maximum concurrent downloads to the number of videos you want to download simultaneously `MAX_CONCURRENT_DOWNLOADS`
+
+### 4. Add videos to download
+
+Update the `download_list.md` file and add the videos you want to download to the categories you want. Use the format:
+
+```markdown
+### CATEGORY 1
+
+- [ ] https://www.youtube.com/watch?v=VIDEOID
+
+### CATEGORY 2
+
+- [ ] https://www.youtube.com/watch?v=VIDEOID
+```
+
+### 5. Run the Download Agent
 
 ```bash
 ./download_videos.sh
@@ -174,3 +196,83 @@ The script is designed to be easily extensible for:
 ---
 
 **Note**: This script automatically handles all setup tasks that were previously manual. The old `setup_downloads.sh` script is no longer needed and has been moved to the `scripts/` folder for reference.
+
+---
+
+## .env Variable Usage Analysis
+
+### 1. **WORKING_DIRECTORY** (Line 113)
+
+```bash
+cd "$WORKING_DIRECTORY"
+```
+
+- Purpose: Sets the base directory for downloads
+- Usage: Script changes to this directory before creating the project folder
+- Example: `/Users/oliver/Downloads`
+- Location in script: Line 113
+
+### 2. **PROJECT_FOLDER** (Lines 116, 119)
+
+```bash
+mkdir -p "$PROJECT_FOLDER"
+cd "$PROJECT_FOLDER"
+```
+
+- Purpose: Name of the project folder created inside WORKING_DIRECTORY
+- Usage: Creates and navigates into this folder where all downloads are stored
+- Final path structure: `$WORKING_DIRECTORY/$PROJECT_FOLDER/VIDEOS/`
+- Example: `yt-dlp-agent` → `/Users/oliver/Downloads/yt-dlp-agent/VIDEOS/`
+- Location in script: Lines 116, 119
+
+### 3. **MAX_CONCURRENT_DOWNLOADS** (Lines 280, 311)
+
+```bash
+local max_concurrent="$MAX_CONCURRENT_DOWNLOADS"
+while [ $current_downloads -ge $max_concurrent ]; do
+```
+
+- Purpose: Limits how many downloads run simultaneously
+- Usage: Controls concurrency in the download loop
+- Behavior: Waits when the limit is reached, then starts new downloads as others finish
+- Location in script:
+  - Line 280: Assigned to local variable
+  - Line 311: Used in concurrency check loop
+
+### 4. **DOWNLOAD_QUALITY** (Line 174)
+
+```bash
+yt-dlp -f "$DOWNLOAD_QUALITY" \
+```
+
+- Purpose: Sets the video quality/format for yt-dlp
+- Usage: Passed directly to yt-dlp's `-f` (format) option
+- Example: `"bestvideo[height<=1080]+bestaudio/best[height<=1080]"`
+- Location in script: Line 174 (inside `download_video` function)
+
+## How Variables Are Loaded
+
+The script loads .env variables using this method (lines 10-37):
+
+```bash
+export $(cat .env | grep -v '^#' | xargs)
+```
+
+This:
+
+- Reads the .env file
+- Filters out comment lines (starting with `#`)
+- Exports all variables to the shell environment
+- Makes them available throughout the script
+
+## Example of Configuration Flow
+
+1. Script starts in: `/Users/oliver/Downloads/yt-dlp-agent/`
+2. Changes to: `/Users/oliver/Downloads/` (WORKING_DIRECTORY)
+3. Creates/enters: `yt-dlp-agent/` (PROJECT_FOLDER)
+4. Final working directory: `/Users/oliver/Downloads/yt-dlp-agent/`
+5. Videos saved to: `/Users/oliver/Downloads/yt-dlp-agent/VIDEOS/CATEGORY_NAME/`
+
+Note: Since your WORKING_DIRECTORY and PROJECT_FOLDER combine to the same path as the script location, downloads end up in the same directory structure where the script runs, but it can be configured to save to a different directory.
+
+All variables are used correctly and are essential for the script's operation.
