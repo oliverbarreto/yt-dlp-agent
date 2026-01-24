@@ -101,6 +101,11 @@ fi
 echo "✅ download_list.md structure validated successfully!"
 echo ""
 
+# Store the original script directory and download_list.md path
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOWNLOAD_LIST_PATH="$SCRIPT_DIR/download_list.md"
+DOWNLOAD_LIST_TEMPLATE_PATH="$SCRIPT_DIR/download_list_TEMPLATE.md"
+
 # Create working folder and category directories
 echo "🔧 Setting up working directory and category folders..."
 
@@ -129,7 +134,7 @@ create_category_folders() {
                 echo "   ✅ Created folder: VIDEOS/$category"
             fi
         fi
-    done < download_list.md
+    done < "$DOWNLOAD_LIST_PATH"
     
     echo "📁 Category folders created successfully!"
 }
@@ -174,7 +179,7 @@ download_video() {
         echo "✅ Download completed successfully!"
         echo "💾 Saved to: VIDEOS/$category/"
         # Update the tracking file
-        sed -i '' "s|- \[ \] $url|- [x] $url|" download_list.md
+        sed -i '' "s|- \[ \] $url|- [x] $url|" "$DOWNLOAD_LIST_PATH"
         echo "📝 Updated tracking file"
         
         # Update progress bar
@@ -194,9 +199,15 @@ count_videos() {
     local count=0
     
     if [ "$status" = "pending" ]; then
-        count=$(grep -c "^- \[ \]" download_list.md 2>/dev/null || echo "0")
+        count=$(grep -c "^- \[ \]" "$DOWNLOAD_LIST_PATH" 2>/dev/null || echo "0")
     elif [ "$status" = "completed" ]; then
-        count=$(grep -c "^- \[x\]" download_list.md 2>/dev/null || echo "0")
+        count=$(grep -c "^- \[x\]" "$DOWNLOAD_LIST_PATH" 2>/dev/null || echo "0")
+    fi
+    
+    # Trim whitespace and ensure it's a number
+    count=$(echo "$count" | tr -d '[:space:]')
+    if [ -z "$count" ] || ! [[ "$count" =~ ^[0-9]+$ ]]; then
+        count=0
     fi
     
     echo "$count"
@@ -207,6 +218,23 @@ show_progress() {
     local completed="$1"
     local total="$2"
     local width=50
+    
+    # Trim whitespace and ensure both are numbers
+    completed=$(echo "$completed" | tr -d '[:space:]')
+    total=$(echo "$total" | tr -d '[:space:]')
+    
+    # Default to 0 if empty or not a number
+    if [ -z "$completed" ] || ! [[ "$completed" =~ ^[0-9]+$ ]]; then
+        completed=0
+    fi
+    if [ -z "$total" ] || ! [[ "$total" =~ ^[0-9]+$ ]]; then
+        total=0
+    fi
+    
+    # Handle division by zero
+    if [ "$total" -eq 0 ]; then
+        total=1
+    fi
     local percentage=$((completed * 100 / total))
     local filled=$((completed * width / total))
     local empty=$((width - filled))
@@ -239,10 +267,10 @@ update_download_list_status() {
     local current_datetime=$(date +"%B %d, %Y %H:%M")
     
     # Update the date line (line 3)
-    sed -i '' "3s/.*/**Created:** $current_datetime/" download_list.md
+    sed -i '' "3s/.*/**Created:** $current_datetime/" "$DOWNLOAD_LIST_PATH"
     
     # Update the status line (line 4)
-    sed -i '' "4s/.*/**Status:** Finalized - All downloads completed/" download_list.md
+    sed -i '' "4s/.*/**Status:** Finalized - All downloads completed/" "$DOWNLOAD_LIST_PATH"
     
     echo "✅ Download list status updated successfully!"
 }
@@ -255,7 +283,7 @@ process_downloads() {
     local category=""
     
     # Count total videos
-    total_videos=$(grep -c "https://www.youtube.com/watch" download_list.md)
+    total_videos=$(grep -c "https://www.youtube.com/watch" "$DOWNLOAD_LIST_PATH")
     
     echo "📊 Total videos to download: $total_videos"
     echo "🚀 Starting downloads with max $max_concurrent concurrent downloads..."
@@ -272,7 +300,7 @@ process_downloads() {
             category="${BASH_REMATCH[1]}"
             echo "📂 Processing category: $category"
         # Check if this is a video URL line (pending download)
-        elif [[ $line =~ ^-[[:space:]]\[[[:space:]]\][[:space:]](https://www.youtube.com/watch[^[:space:]]+)$ ]]; then
+        elif [[ $line =~ ^-[[:space:]]+\[[[:space:]]*\][[:space:]]+(https://www.youtube.com/watch[^[:space:]]+)$ ]]; then
             url="${BASH_REMATCH[1]}"
             
             if [ -n "$category" ]; then
@@ -297,7 +325,7 @@ process_downloads() {
                 echo "⚠️  Warning: Found video URL but no category defined: $url"
             fi
         fi
-    done < download_list.md
+    done < "$DOWNLOAD_LIST_PATH"
     
     # Wait for all background downloads to complete
     echo ""
@@ -322,21 +350,21 @@ process_downloads() {
     update_download_list_status
     
     # Move download_list.md to downloaded folder with timestamp
-    if [ -f "download_list.md" ]; then
-        # Create downloaded folder if it doesn't exist
-        mkdir -p downloaded
+    if [ -f "$DOWNLOAD_LIST_PATH" ]; then
+        # Create downloaded folder if it doesn't exist (in script directory)
+        mkdir -p "$SCRIPT_DIR/downloaded"
         
         # Generate timestamp in YYYYmmdd-hh:mm format
         timestamp=$(date +"%Y%m%d-%H:%M")
-        new_filename="downloaded/download_list_${timestamp}.md"
+        new_filename="$SCRIPT_DIR/downloaded/download_list_${timestamp}.md"
         
         # Move the file
-        mv download_list.md "$new_filename"
+        mv "$DOWNLOAD_LIST_PATH" "$new_filename"
         echo "📄 Moved download list to: $new_filename"
         
         # Create new download_list.md from template for next session
-        if [ -f "download_list_TEMPLATE.md" ]; then
-            cp download_list_TEMPLATE.md download_list.md
+        if [ -f "$DOWNLOAD_LIST_TEMPLATE_PATH" ]; then
+            cp "$DOWNLOAD_LIST_TEMPLATE_PATH" "$DOWNLOAD_LIST_PATH"
             echo "📋 Created new download_list.md from template for next session"
         else
             echo "⚠️  Warning: download_list_TEMPLATE.md not found, cannot create new download list"
