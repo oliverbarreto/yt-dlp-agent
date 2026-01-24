@@ -54,10 +54,11 @@ The `download_list.md` file should be organized as follows:
 
 ### 1. Prerequisites
 
-Ensure `yt-dlp` is installed as a script using Homebrew:
+Ensure `yt-dlp` & `ffmpeg` are installed as a script using Homebrew:
 
 ```bash
 brew install yt-dlp
+brew install ffmpeg
 ```
 
 ### 2. Give Execution Permissions
