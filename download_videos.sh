@@ -19,14 +19,13 @@ load_env() {
         echo "📋 To use this script, you need to:"
         echo "   1. Copy the template: cp .env.example .env"
         echo "   2. Edit .env and configure your settings:"
-        echo "      - WORKING_DIRECTORY: Set your downloads directory"
-        echo "      - PROJECT_FOLDER: Set your project folder name"
+        echo "      - PROJECT_FOLDER: Subfolder under this project for media, or . for VIDEOS/ at project root"
         echo "      - MAX_CONCURRENT_DOWNLOADS: Set concurrent download limit"
         echo "      - DOWNLOAD_QUALITY: Set video quality preference"
         echo ""
         echo "🔧 Example configuration:"
-        echo "   WORKING_DIRECTORY=\"/Users/username/Downloads\""
-        echo "   PROJECT_FOLDER=\"my-video-downloads\""
+        echo "   PROJECT_FOLDER=\".\"    # => <project>/VIDEOS/<category>/"
+        echo "   PROJECT_FOLDER=\"media\"  # => <project>/media/VIDEOS/<category>/"
         echo "   MAX_CONCURRENT_DOWNLOADS=2"
         echo "   DOWNLOAD_QUALITY=\"bestvideo[height<=1080]+bestaudio/best[height<=1080]\""
         echo ""
@@ -106,20 +105,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOWNLOAD_LIST_PATH="$SCRIPT_DIR/download_list.md"
 DOWNLOAD_LIST_TEMPLATE_PATH="$SCRIPT_DIR/download_list_TEMPLATE.md"
 
-# Create working folder and category directories
-echo "🔧 Setting up working directory and category folders..."
-
-# Navigate to WORKING directory from .env file
-cd "$WORKING_DIRECTORY"
-
-# Create main project folder if it doesn't exist
-mkdir -p "$PROJECT_FOLDER"
-
-# Navigate to the project directory
-cd "$PROJECT_FOLDER"
-
-# Create VIDEOS folder if it doesn't exist
-mkdir -p VIDEOS
+# Video storage: <script_dir>/PROJECT_FOLDER/VIDEOS/<category>/  (not WORKING_DIRECTORY/Downloads)
+# PROJECT_FOLDER of "." or empty => <script_dir>/VIDEOS/<category>/
+echo "🔧 Setting up project media folders..."
+if [ -z "${PROJECT_FOLDER:-}" ] || [ "$PROJECT_FOLDER" = "." ]; then
+    MEDIA_BASE="$SCRIPT_DIR"
+else
+    MEDIA_BASE="$SCRIPT_DIR/$PROJECT_FOLDER"
+fi
+mkdir -p "$MEDIA_BASE/VIDEOS" || { echo "❌ ERROR: could not create $MEDIA_BASE/VIDEOS"; exit 1; }
+cd "$MEDIA_BASE" || { echo "❌ ERROR: could not cd to $MEDIA_BASE"; exit 1; }
+echo "📁 Video root: $MEDIA_BASE/VIDEOS/"
 
 # Function to create category folders from download_list.md
 create_category_folders() {
@@ -158,39 +154,158 @@ echo "Current directory: $(pwd)"
 echo "yt-dlp version: $(yt-dlp --version)"
 echo ""
 
+# Max filename length (bytes) for a single path component; APFS is 255. Stay under to allow rename.
+MAX_FILENAME_BYTES=255
+
+# Length of a filename in bytes (UTF-8)
+filename_byte_len() {
+    printf '%s' "$1" | wc -c | tr -d ' '
+}
+
+# Shorten a single path component (basename) to at most max_bytes UTF-8 bytes, keeping the
+# extension (last dot segment) intact. Truncates the stem from the right on a character boundary.
+# Uses python3 when available; otherwise returns the name unchanged.
+trim_filename_to_max_bytes() {
+    local name="$1"
+    local max_b="${2:-255}"
+    if ! command -v python3 &>/dev/null; then
+        printf '%s' "$name"
+        return 0
+    fi
+    python3 - "$name" "$max_b" <<'END_TRIM_PY'
+import sys
+name, max_b = sys.argv[1], int(sys.argv[2])
+b = name.encode("utf-8")
+if len(b) <= max_b:
+    print(name, end="")
+    raise SystemExit(0)
+idx = name.rfind(".")
+if idx > 0:
+    stem, ext = name[:idx], name[idx:]
+else:
+    stem, ext = name, ""
+ext_b = ext.encode("utf-8")
+max_stem = max_b - len(ext_b)
+if max_stem < 1:
+    s = b[:max_b]
+    while s:
+        try:
+            print(s.decode("utf-8"), end="")
+            break
+        except UnicodeDecodeError:
+            s = s[:-1]
+    else:
+        print("", end="")
+    raise SystemExit(0)
+s = stem.encode("utf-8")[:max_stem]
+while s:
+    try:
+        print(s.decode("utf-8") + ext, end="")
+        break
+    except UnicodeDecodeError:
+        s = s[:-1]
+else:
+    print(ext, end="")
+END_TRIM_PY
+}
+
+# After yt-dlp finishes, the merged output is VIDEOS/$category/${video_id}.<ext>
+# Pick the primary file if several matches exist (e.g. stray fragments), preferring the largest.
+find_id_downloaded_file() {
+    local category="$1"
+    local video_id="$2"
+    local best=""
+    local best_size=0
+    local f size
+    shopt -s nullglob
+    for f in "VIDEOS/$category/${video_id}."*; do
+        [[ "$f" == *.part ]] && continue
+        [[ -f "$f" ]] || continue
+        size=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+        if [ -n "$size" ] && [ "$size" -gt "$best_size" ]; then
+            best_size=$size
+            best=$f
+        fi
+    done
+    shopt -u nullglob
+    echo "$best"
+}
+
 # Function to download a single video
 download_video() {
     local url="$1"
     local category="$2"
     local total_videos="$3"
-    
+    local video_id=""
+    local downloaded_file
+    local target_path
+    local target_base
+    local blen
+
     echo "🤖 Starting download: $url"
     echo "📁 Category: $category"
-    
+
+    # YouTube id from watch URL (?v= or &v=)
+    if [[ "$url" =~ [\?\&]v=([A-Za-z0-9_-]{6,12}) ]]; then
+        video_id="${BASH_REMATCH[1]}"
+    else
+        echo "❌ Could not parse video id from URL: $url"
+        return 1
+    fi
+
     # Create category directory inside VIDEOS if it doesn't exist
     mkdir -p "VIDEOS/$category"
-    
-    # Download with yt-dlp to the VIDEOS/CATEGORY folder with new filename format
-    yt-dlp -f "$DOWNLOAD_QUALITY" \
-           -o "VIDEOS/$category/%(upload_date)s - %(uploader)s - %(title)s - %(id)s - %(resolution)s.%(ext)s" \
-           "$url"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Download completed successfully!"
-        echo "💾 Saved to: VIDEOS/$category/"
-        # Update the tracking file
-        sed -i '' "s|- \[ \] $url|- [x] $url|" "$DOWNLOAD_LIST_PATH"
-        echo "📝 Updated tracking file"
-        
-        # Update progress bar
-        update_progress "$total_videos"
-        echo ""  # New line after progress update
-        
-        return 0
-    else
+
+    # Use short id-based name during download+merge to avoid "Unable to rename .part" when the
+    # final template path is too long (APFS ~255 bytes per name) or similar rename failures.
+    local naming_pattern="%(upload_date)s - %(uploader)s - %(title)s - %(id)s - %(resolution)s.%(ext)s"
+
+    if ! yt-dlp -f "$DOWNLOAD_QUALITY" \
+           -o "VIDEOS/$category/${video_id}.%(ext)s" \
+           "$url"; then
         echo "❌ Download failed for: $url"
         return 1
     fi
+
+    downloaded_file=$(find_id_downloaded_file "$category" "$video_id")
+    if [ -z "$downloaded_file" ] || [ ! -f "$downloaded_file" ]; then
+        echo "❌ No output file found after download (id=$video_id): $url"
+        return 1
+    fi
+
+    # Desired name from the same format as before (metadata only, no re-download)
+    target_path=$(yt-dlp -f "$DOWNLOAD_QUALITY" -o "VIDEOS/$category/$naming_pattern" \
+        --print "%(filename)s" --skip-download "$url" 2>/dev/null | grep '^VIDEOS/' | tail -1)
+
+    if [ -z "$target_path" ]; then
+        echo "✅ Download completed; kept filename ${downloaded_file##*/} (could not build display name metadata)."
+    else
+        target_base="${target_path##*/}"
+        blen=$(filename_byte_len "$target_base")
+        if [ -n "$blen" ] && [ "$blen" -gt "$MAX_FILENAME_BYTES" ]; then
+            echo "📎 Trimming filename (${blen} bytes → max ${MAX_FILENAME_BYTES}, keeping extension)..."
+            target_base=$(trim_filename_to_max_bytes "$target_base" "$MAX_FILENAME_BYTES")
+            target_path="VIDEOS/$category/$target_base"
+        fi
+        if [ "$downloaded_file" = "$target_path" ]; then
+            echo "✅ Download completed successfully! 💾 $target_path"
+        elif [ -e "$target_path" ] && [ ! "$downloaded_file" -ef "$target_path" ]; then
+            echo "✅ Download completed; kept ${downloaded_file##*/} (target name already exists: $target_path)"
+        elif mv -n "$downloaded_file" "$target_path" 2>/dev/null; then
+            echo "✅ Download completed successfully!"
+            echo "💾 Saved to: $target_path"
+        else
+            echo "✅ Download completed; kept id-based name after rename failed: ${downloaded_file##*/}"
+        fi
+    fi
+
+    # Update the tracking file on any successful download (data on disk, even if we kept the id name)
+    sed -i '' "s|- \[ \] $url|- [x] $url|" "$DOWNLOAD_LIST_PATH"
+    echo "📝 Updated tracking file"
+
+    update_progress "$total_videos"
+    echo ""
+    return 0
 }
 
 # Function to count videos by status
@@ -344,7 +459,7 @@ process_downloads() {
     echo "   - Completed: $(count_videos "completed")"
     echo "   - Pending: $(count_videos "pending")"
     echo ""
-    echo "📁 All videos saved in VIDEOS/ folder structure"
+    echo "📁 All videos saved under: ${MEDIA_BASE}/VIDEOS/"
     
     # Update download_list.md with completion status before moving
     update_download_list_status
