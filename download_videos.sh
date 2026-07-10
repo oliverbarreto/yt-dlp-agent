@@ -6,11 +6,15 @@
 # Clear the terminal
 clear
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOWNLOAD_LIST_PATH="$SCRIPT_DIR/download_list.md"
+DOWNLOAD_LIST_TEMPLATE_PATH="$SCRIPT_DIR/download_list_TEMPLATE.md"
+
 # Function to load environment variables from .env file
 load_env() {
-    if [ -f ".env" ]; then
+    if [ -f "$SCRIPT_DIR/.env" ]; then
         echo "🔧 Loading configuration from .env file..."
-        export $(cat .env | grep -v '^#' | xargs)
+        export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
         echo "✅ Configuration loaded successfully"
     else
         echo ""
@@ -38,11 +42,29 @@ load_env() {
 # Load environment variables
 load_env
 
+# Prefer Homebrew's isolated yt-dlp (libexec venv). The /opt/homebrew/bin/yt-dlp shim can
+# shadow it and run an older pip-installed package from python@3.14 site-packages instead.
+resolve_yt_dlp() {
+    if [ -n "${YT_DLP:-}" ] && [ -x "$YT_DLP" ]; then
+        echo "$YT_DLP"
+        return 0
+    fi
+    if command -v brew &>/dev/null; then
+        local brew_yt_dlp
+        brew_yt_dlp="$(brew --prefix yt-dlp 2>/dev/null)/libexec/bin/yt-dlp"
+        if [ -x "$brew_yt_dlp" ]; then
+            echo "$brew_yt_dlp"
+            return 0
+        fi
+    fi
+    command -v yt-dlp 2>/dev/null
+}
+
 # Accept youtube.com and www.youtube.com watch URLs
 YOUTUBE_URL_GREP='https://(www\.)?youtube\.com/watch'
 
 # Check if download_list.md exists
-if [ ! -f "download_list.md" ]; then
+if [ ! -f "$DOWNLOAD_LIST_PATH" ]; then
     echo ""
     echo "❌ ERROR: download_list.md file not found!"
     echo ""
@@ -68,7 +90,7 @@ fi
 echo "🔍 Validating download_list.md structure..."
 
 # Check if file contains categories
-if ! grep -q "^### " download_list.md; then
+if ! grep -q "^### " "$DOWNLOAD_LIST_PATH"; then
     echo ""
     echo "❌ ERROR: Invalid download_list.md structure!"
     echo ""
@@ -86,27 +108,24 @@ if ! grep -q "^### " download_list.md; then
     exit 1
 fi
 
-# Check if file contains video URLs
-if ! grep -qE "$YOUTUBE_URL_GREP" download_list.md; then
+# Check if file contains pending video URLs (- [ ] lines only)
+if ! grep -qE "^- \[ \].*$YOUTUBE_URL_GREP" "$DOWNLOAD_LIST_PATH"; then
     echo ""
-    echo "❌ ERROR: No YouTube video URLs found!"
+    echo "❌ ERROR: No pending YouTube video URLs found!"
     echo ""
-    echo "📋 Your download_list.md file must contain:"
-    echo "   - At least one YouTube video URL"
-    echo "   - URLs in the format: - [ ] https://youtube.com/watch?v=VIDEO_ID"
+    echo "📄 Checked: $DOWNLOAD_LIST_PATH"
     echo ""
-    echo "🔧 Please add video URLs to the file and run this script again."
+    echo "📋 Your download_list.md file must contain at least one pending entry:"
+    echo "   - [ ] https://youtube.com/watch?v=VIDEO_ID"
+    echo ""
+    echo "💡 If you just finished a run, the script resets this file from the template."
+    echo "   Save your edits to download_list.md, then run the script again."
     echo ""
     exit 1
 fi
 
 echo "✅ download_list.md structure validated successfully!"
 echo ""
-
-# Store the original script directory and download_list.md path
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOWNLOAD_LIST_PATH="$SCRIPT_DIR/download_list.md"
-DOWNLOAD_LIST_TEMPLATE_PATH="$SCRIPT_DIR/download_list_TEMPLATE.md"
 
 # Video storage: <script_dir>/PROJECT_FOLDER/VIDEOS/<category>/  (not WORKING_DIRECTORY/Downloads)
 # PROJECT_FOLDER of "." or empty => <script_dir>/VIDEOS/<category>/
@@ -143,10 +162,11 @@ create_category_folders
 
 echo ""
 
-# Check if yt-dlp is installed
-if ! command -v yt-dlp &> /dev/null; then
+# Resolve yt-dlp binary (Homebrew libexec first; override with YT_DLP in .env)
+YT_DLP=$(resolve_yt_dlp)
+if [ -z "$YT_DLP" ] || [ ! -x "$YT_DLP" ]; then
     echo "❌ yt-dlp is not installed. Please install it first:"
-    echo "pip install yt-dlp"
+    echo "brew install yt-dlp"
     exit 1
 fi
 
@@ -154,7 +174,8 @@ echo "========================================================"
 echo "🚀 YouTube Video Download Agent - Autonomous Mode"
 echo "========================================================"
 echo "Current directory: $(pwd)"
-echo "yt-dlp version: $(yt-dlp --version)"
+echo "yt-dlp binary: $YT_DLP"
+echo "yt-dlp version: $("$YT_DLP" --version)"
 echo ""
 
 # Max filename length (bytes) for a single path component; APFS is 255. Stay under to allow rename.
@@ -263,7 +284,7 @@ download_video() {
     # final template path is too long (APFS ~255 bytes per name) or similar rename failures.
     local naming_pattern="%(upload_date)s - %(uploader)s - %(title)s - %(id)s - %(resolution)s.%(ext)s"
 
-    if ! yt-dlp -f "$DOWNLOAD_QUALITY" \
+    if ! "$YT_DLP" -f "$DOWNLOAD_QUALITY" \
            -o "VIDEOS/$category/${video_id}.%(ext)s" \
            "$url"; then
         echo "❌ Download failed for: $url"
@@ -277,7 +298,7 @@ download_video() {
     fi
 
     # Desired name from the same format as before (metadata only, no re-download)
-    target_path=$(yt-dlp -f "$DOWNLOAD_QUALITY" -o "VIDEOS/$category/$naming_pattern" \
+    target_path=$("$YT_DLP" -f "$DOWNLOAD_QUALITY" -o "VIDEOS/$category/$naming_pattern" \
         --print "%(filename)s" --skip-download "$url" 2>/dev/null | grep '^VIDEOS/' | tail -1)
 
     if [ -z "$target_path" ]; then
@@ -401,7 +422,7 @@ process_downloads() {
     local category=""
     
     # Count total videos
-    total_videos=$(grep -cE "$YOUTUBE_URL_GREP" "$DOWNLOAD_LIST_PATH")
+    total_videos=$(grep -cE "^- \[ \].*$YOUTUBE_URL_GREP" "$DOWNLOAD_LIST_PATH")
     
     echo "📊 Total videos to download: $total_videos"
     echo "🚀 Starting downloads with max $max_concurrent concurrent downloads..."

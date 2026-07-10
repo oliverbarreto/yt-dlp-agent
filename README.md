@@ -49,6 +49,7 @@ The `download_list.md` file should be organized as follows:
 ```
 
 **Important**: Categories must use the `### Category Name` format (title 3) for automatic folder creation.
+**Important**: Must use `- [ ]` must for pending videos. The script will automatically change this to `- [x]` for completed videos.
 
 ## 🎯 Setup and Usage
 
@@ -174,7 +175,7 @@ The script provides comprehensive progress information:
 
 ### Common Issues:
 
-1. **yt-dlp not found**: Install with `pip install yt-dlp`
+1. **yt-dlp not found**: Install with `brew install yt-dlp`
 2. **Permission denied**: Run `chmod +x download_videos.sh`
 3. **Category folders not created**: Ensure categories use `### Category Name` format
 4. **Downloads fail**: Check internet connection and video availability
