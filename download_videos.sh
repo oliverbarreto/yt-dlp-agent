@@ -38,6 +38,9 @@ load_env() {
 # Load environment variables
 load_env
 
+# Accept youtube.com and www.youtube.com watch URLs
+YOUTUBE_URL_GREP='https://(www\.)?youtube\.com/watch'
+
 # Check if download_list.md exists
 if [ ! -f "download_list.md" ]; then
     echo ""
@@ -71,7 +74,7 @@ if ! grep -q "^### " download_list.md; then
     echo ""
     echo "📋 Your download_list.md file must contain:"
     echo "   - Categories marked with '### Category Name'"
-    echo "   - Video URLs in the format: - [ ] https://www.youtube.com/watch?v=VIDEO_ID"
+    echo "   - Video URLs in the format: - [ ] https://youtube.com/watch?v=VIDEO_ID"
     echo ""
     echo "📁 Example structure:"
     echo "   ### CATEGORY 1"
@@ -84,13 +87,13 @@ if ! grep -q "^### " download_list.md; then
 fi
 
 # Check if file contains video URLs
-if ! grep -q "https://www.youtube.com/watch" download_list.md; then
+if ! grep -qE "$YOUTUBE_URL_GREP" download_list.md; then
     echo ""
     echo "❌ ERROR: No YouTube video URLs found!"
     echo ""
     echo "📋 Your download_list.md file must contain:"
     echo "   - At least one YouTube video URL"
-    echo "   - URLs in the format: - [ ] https://www.youtube.com/watch?v=VIDEO_ID"
+    echo "   - URLs in the format: - [ ] https://youtube.com/watch?v=VIDEO_ID"
     echo ""
     echo "🔧 Please add video URLs to the file and run this script again."
     echo ""
@@ -398,7 +401,7 @@ process_downloads() {
     local category=""
     
     # Count total videos
-    total_videos=$(grep -c "https://www.youtube.com/watch" "$DOWNLOAD_LIST_PATH")
+    total_videos=$(grep -cE "$YOUTUBE_URL_GREP" "$DOWNLOAD_LIST_PATH")
     
     echo "📊 Total videos to download: $total_videos"
     echo "🚀 Starting downloads with max $max_concurrent concurrent downloads..."
@@ -415,7 +418,7 @@ process_downloads() {
             category="${BASH_REMATCH[1]}"
             echo "📂 Processing category: $category"
         # Check if this is a video URL line (pending download)
-        elif [[ $line =~ ^-[[:space:]]+\[[[:space:]]*\][[:space:]]+(https://www.youtube.com/watch[^[:space:]]+)$ ]]; then
+        elif [[ $line =~ ^-[[:space:]]+\[[[:space:]]*\][[:space:]]+(https://(www\.)?youtube\.com/watch[^[:space:]]+)$ ]]; then
             url="${BASH_REMATCH[1]}"
             
             if [ -n "$category" ]; then
